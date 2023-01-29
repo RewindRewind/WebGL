@@ -63,12 +63,12 @@ function draw() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
     /* Set the values of the projection transformation */
-    let projection = m4.perspective(Math.PI/8, 1, 8, 12); 
+    let projection = m4.perspective(Math.PI/8,1,8,12); 
     
     /* Get the view matrix from the SimpleRotator object.*/
     let modelView = spaceball.getViewMatrix();
 
-    let rotateToPointZero = m4.axisRotation([0.707,0.707,0], 0.7);
+    let rotateToPointZero = m4.axisRotation([0.707,0.707,0],0.7);
     let translateToPointZero = m4.translation(0,0,-10);
 
     let matAccum0 = m4.multiply(rotateToPointZero, modelView );
@@ -81,36 +81,63 @@ function draw() {
     gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection );
     
     /* Draw the six faces of a cube, with different colors. */
-    gl.uniform4fv(shProgram.iColor, [1,1,0,1] );
+    gl.uniform4fv(shProgram.iColor,[0,0,1,1]);
 
     surface.Draw();
 }
 
-function CreateSurfaceData()
-{
+function CreateSurfaceData() {
     let vertexList = [];
-
-    for (let i=0; i<360; i+=5) {
-        vertexList.push( Math.sin(deg2rad(i)), 1, Math.cos(deg2rad(i)) );
-        vertexList.push( Math.sin(deg2rad(i)), 0, Math.cos(deg2rad(i)) );
+    let i = 0;
+    let j = -Math.PI;
+    let step = 0.2;
+    while (i < Math.PI * 2) {
+        while (j < Math.PI) {
+            let v = AstroidalTorus(i, j)
+            vertexList.push(v.x, v.y, v.z)
+            j += step
+        }
+        j = -Math.PI;
+        i += step
+    }
+    i = 0;
+    j = -Math.PI;
+    while (j < Math.PI) {
+        while (i < Math.PI * 2) {
+            let v = AstroidalTorus(i, j)
+            vertexList.push(v.x, v.y, v.z)
+            i += step
+        }
+        i = 0;
+        j += step
     }
 
     return vertexList;
+    }
+
+function AstroidalTorus(u, v) {
+    let r = 1;
+    let a = 0.5;
+    let t = 0.5 * Math.PI;
+    let x = (r + a * Math.cos(u) ** 3 * Math.cos(t) - a * Math.sin(u) ** 3 * Math.sin(t)) * Math.cos(v);
+    let y = (r + a * Math.cos(u) ** 3 * Math.cos(t) - a * Math.sin(u) ** 3 * Math.sin(t)) * Math.sin(v);
+    let z = a * Math.cos(u) ** 3 * Math.sin(t) + Math.sin(u) ** 3 * Math.cos(t);
+    return { x: x, y: y, z: z }
 }
 
 
 /* Initialize the WebGL context. Called from init() */
 function initGL() {
-    let prog = createProgram( gl, vertexShaderSource, fragmentShaderSource );
+    let prog = createProgram(gl, vertexShaderSource, fragmentShaderSource);
 
     shProgram = new ShaderProgram('Basic', prog);
     shProgram.Use();
 
-    shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
+    shProgram.iAttribVertex = gl.getAttribLocation(prog, "vertex");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
-    shProgram.iColor                     = gl.getUniformLocation(prog, "color");
+    shProgram.iColor = gl.getUniformLocation(prog, "color");
 
-    surface = new Model('Surface');
+    surface = new Model('AstroidalTorus');
     surface.BufferData(CreateSurfaceData());
 
     gl.enable(gl.DEPTH_TEST);
@@ -126,23 +153,23 @@ function initGL() {
  * source code for the vertex shader and for the fragment shader.
  */
 function createProgram(gl, vShader, fShader) {
-    let vsh = gl.createShader( gl.VERTEX_SHADER );
-    gl.shaderSource(vsh,vShader);
+    let vsh = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vsh, vShader);
     gl.compileShader(vsh);
-    if ( ! gl.getShaderParameter(vsh, gl.COMPILE_STATUS) ) {
+    if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) {
         throw new Error("Error in vertex shader:  " + gl.getShaderInfoLog(vsh));
      }
-    let fsh = gl.createShader( gl.FRAGMENT_SHADER );
+    let fsh = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fsh, fShader);
     gl.compileShader(fsh);
-    if ( ! gl.getShaderParameter(fsh, gl.COMPILE_STATUS) ) {
+    if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) {
        throw new Error("Error in fragment shader:  " + gl.getShaderInfoLog(fsh));
     }
     let prog = gl.createProgram();
-    gl.attachShader(prog,vsh);
+    gl.attachShader(prog, vsh);
     gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
-    if ( ! gl.getProgramParameter( prog, gl.LINK_STATUS) ) {
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
        throw new Error("Link error in program:  " + gl.getProgramInfoLog(prog));
     }
     return prog;
@@ -157,7 +184,7 @@ function init() {
     try {
         canvas = document.getElementById("webglcanvas");
         gl = canvas.getContext("webgl");
-        if ( ! gl ) {
+        if (!gl) {
             throw "Browser does not support WebGL";
         }
     }
