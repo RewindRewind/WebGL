@@ -5,6 +5,10 @@ let surface;                    // A surface model
 let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
 
+let point;
+let texturePoint;
+let scalingKoef;
+
 function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
@@ -14,10 +18,11 @@ function deg2rad(angle) {
 function Model(name) {
     this.name = name;
     this.iVertexBuffer = gl.createBuffer();
-    this.iNormalBuffer = gl.createBuffer();
+    this.iTextureBuffer = gl.createBuffer();
     this.count = 0;
+    this.countTexture = 0;
 
-    this.BufferData = function(vertices) {
+    this.BufferData = function (vertices) {
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STREAM_DRAW);
@@ -25,10 +30,12 @@ function Model(name) {
         this.count = vertices.length/3;
     }
 
-    this.NormalBufferData = function(normals) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.iNormalBuffer);
+    this.TextureBufferData = function (normals) {
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.iTextureBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STREAM_DRAW);
-        this.count = normals.length/3;
+
+        this.countTexture = normals.length/2;
     }
 
     this.Draw = function () {
@@ -37,12 +44,42 @@ function Model(name) {
         gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(shProgram.iAttribVertex);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.iNormalBuffer);
-        gl.vertexAttribPointer(shProgram.iAttribNormal, 3, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(shProgram.iAttribNormal);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.iTextureBuffer);
+        gl.vertexAttribPointer(shProgram.iAttribTexture, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shProgram.iAttribTexture);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, this.count);
     }
+
+    this.DisplayPoint = function () {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
+        gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shProgram.iAttribVertex);
+        gl.drawArrays(gl.LINE_STRIP, 0, this.count);
+    }
+}
+
+function CreateSphereSurface(r = 0.05) {
+    let vertexList = [];
+    let lon = -Math.PI;
+    let lat = -Math.PI * 0.5;
+    while (lon < Math.PI) {
+        while (lat < Math.PI * 0.5) {
+            let v1 = sphereSurfaceData(r, lon, lat);
+            vertexList.push(v1.x, v1.y, v1.z);
+            lat += 0.05;
+        }
+        lat = -Math.PI * 0.5;
+        lon += 0.05;
+    }
+    return vertexList;
+}
+
+function sphereSurfaceData(r, u, v) {
+    let x = r * Math.sin(u) * Math.cos(v);
+    let y = r * Math.sin(u) * Math.sin(v);
+    let z = r * Math.cos(u);
+    return { x: x, y: y, z: z };
 }
 
 
@@ -54,14 +91,16 @@ function ShaderProgram(name, program) {
 
     // Location of the attribute variable in the shader program.
     this.iAttribVertex = -1;
-    this.iAttribNormal = -1;
-
-    this.iLightDir = -1;
+    this.iAttribTexture = -1;
     // Location of the uniform matrix representing the combined transformation.
     this.iModelViewProjectionMatrix = -1;
-    this.iNormalMatrix = -1;
 
-    this.Use = function() {
+    this.iTranslatePoint = -1;
+    this.iTexturePoint = -1;
+    this.iScalingKoef = -1;
+    this.iTMU = -1;
+
+    this.Use = function () {
         gl.useProgram(this.prog);
     }
 }
@@ -93,31 +132,26 @@ function draw() {
 
     gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection);
 
-    let modelviewInv = new Float32Array(16);
-    let normalmatrix = new Float32Array(16);
-    mat4Invert(modelViewProjection, modelviewInv);
-    mat4Transpose(modelviewInv, normalmatrix);
-
-    gl.uniformMatrix4fv(shProgram.iNormalMatrix, false, normalmatrix);
-    gl.uniform3fv(shProgram.iLightDir,[5 * Math.cos(Date.now() * 0.001), 2, 2]);
-
+    gl.uniform1i(shProgram.iTMU, 0);
+    gl.enable(gl.TEXTURE_2D);
+    gl.uniform2fv(shProgram.iTexturePoint, [texturePoint.x, texturePoint.y]);
+    gl.uniform1f(shProgram.iScalingKoef, scalingKoef);
     surface.Draw();
-}
-
-function anim() {
-    draw();
-    window.requestAnimationFrame(anim);
+    let tr = AstroidalTorus(map(texturePoint.x, 0, 1, 0, Math.PI*2),map(texturePoint.y, 0, 1, 0, Math.PI*2))
+    gl.uniform3fv(shProgram.iTranslatePoint, [tr.x, tr.y, tr.z]);
+    gl.uniform1f(shProgram.iScalingKoef, -scalingKoef);
+    point.DisplayPoint();
 }
 
 function CreateSurfaceData() {
     let vertexList = [];
-    let uMax = Math.PI * 2
-    let vMax = Math.PI
+    let uMax = Math.PI * 2;
+    let vMax = Math.PI * 2;
     let uStep = uMax / 50;
     let vStep = vMax / 50;
 
     for (let u = 0; u <= uMax; u += uStep) {
-        for (let v = -vMax; v <= vMax; v += vStep) {
+        for (let v = 0; v <= vMax; v += vStep) {
             let vert = AstroidalTorus(u, v);
             let avert = AstroidalTorus(u + uStep, v);
             let bvert = AstroidalTorus(u, v + vStep);
@@ -135,49 +169,42 @@ function CreateSurfaceData() {
 
     return vertexList;
 }
-function CreateNormals() {
-    let normals = [];
+
+function CreateTexture() {
+    let texture = [];
     let uMax = Math.PI * 2;
-    let vMax = Math.PI;
+    let vMax = Math.PI * 2;
     let uStep = uMax / 50;
     let vStep = vMax / 50;
 
     for (let u = 0; u <= uMax; u += uStep) {
-        for (let v = -vMax; v <= vMax; v += vStep) {
-            let vert = AstroidalTorus(u, v);
-            let avert = AstroidalTorus(u + uStep, v);
-            let bvert = AstroidalTorus(u, v + vStep);
-            let cvert = AstroidalTorus(u + uStep, v + vStep);
-            let verta0 = { x: avert.x - vert.x, y: avert.y - vert.y, z: avert.z - vert.z };
-            let vertb0 = { x: bvert.x - vert.x, y: bvert.y - vert.y, z: bvert.z - vert.z };
-            let vertca = { x: cvert.x - avert.x, y: cvert.y - avert.y, z: cvert.z - avert.z };
-            let vertba = { x: bvert.x - avert.x, y: bvert.y - avert.y, z: bvert.z - avert.z };
-            let norm = vec3Cross(verta0, vertb0);
-            vec3Normalize(norm);
-            let norma = vec3Cross(vertca, vertba);
-            vec3Normalize(norma);
-            normals.push(norm.x, norm.y, norm.z);
-            normals.push(norm.x, norm.y, norm.z);
-            normals.push(norm.x, norm.y, norm.z);
-            normals.push(norma.x, norma.y, norma.z);
-            normals.push(norma.x, norma.y, norma.z);
-            normals.push(norma.x, norma.y, norma.z);
+        for (let v = 0; v <= vMax; v += vStep) {
+            let u1 = map(u, 0, uMax, 0, 1);
+            let v1 = map(v, 0, vMax, 0, 1);
+            texture.push(u1, v1);
+            u1 = map(u + uStep, 0, uMax, 0, 1);
+            texture.push(u1, v1);
+            u1 = map(u, 0, uMax, 0, 1);
+            v1 = map(v + vStep, 0, vMax, 0, 1);
+            texture.push(u1, v1);
+            u1 = map(u + uStep, 0, uMax, 0, 1);
+            v1 = map(v, 0, vMax, 0, 1);
+            texture.push(u1, v1);
+            v1 = map(v + vStep, 0, vMax, 0, 1);
+            texture.push(u1, v1);
+            u1 = map(u, 0, uMax, 0, 1);
+            v1 = map(v + vStep, 0, vMax, 0, 1);
+            texture.push(u1, v1);
         }
     }
 
-    return normals;
+    return texture;
 }
 
-function vec3Cross(a, b) {
-    let x = a.y * b.z - b.y * a.z;
-    let y = a.z * b.x - b.z * a.x;
-    let z = a.x * b.y - b.x * a.y;
-    return { x: x, y: y, z: z }
-}
-
-function vec3Normalize(a) {
-    var mag = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-    a.x /= mag; a.y /= mag; a.z /= mag;
+function map(val, f1, t1, f2, t2) {
+    let m;
+    m = (val - f1) * (t2 - f2) / (t1 - f1) + f2;
+    return Math.min(Math.max(m, f2), t2);
 }
 
 function AstroidalTorus(u, v) {
@@ -199,14 +226,19 @@ function initGL() {
     shProgram.Use();
 
     shProgram.iAttribVertex = gl.getAttribLocation(prog, "vertex");
-    shProgram.iAttribNormal = gl.getAttribLocation(prog, "normal");
+    shProgram.iAttribTexture = gl.getAttribLocation(prog, "texture");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
-    shProgram.iNormalMatrix = gl.getUniformLocation(prog, "NormalMatrix");
-    shProgram.iLightDir = gl.getUniformLocation(prog, "lightDir");
+    shProgram.iTranslatePoint = gl.getUniformLocation(prog, 'translatePoint');
+    shProgram.iTexturePoint = gl.getUniformLocation(prog, 'texturePoint');
+    shProgram.iScalingKoef = gl.getUniformLocation(prog, 'scalingKoef');
+    shProgram.iTMU = gl.getUniformLocation(prog, 'tmu');
 
     surface = new Model('AstroidalTorus');
     surface.BufferData(CreateSurfaceData());
-    surface.NormalBufferData(CreateNormals());
+    LoadTexture();
+    surface.TextureBufferData(CreateTexture());
+    point = new Model('Point');
+    point.BufferData(CreateSphereSurface())
 
     gl.enable(gl.DEPTH_TEST);
 }
@@ -248,6 +280,8 @@ function createProgram(gl, vShader, fShader) {
  * initialization function that will be called when the page has loaded
  */
 function init() {
+    texturePoint = { x: 0.1, y: 0.1 }
+    scalingKoef = 1.0;
     let canvas;
     try {
         canvas = document.getElementById("webglcanvas");
@@ -272,56 +306,53 @@ function init() {
 
     spaceball = new TrackballRotator(canvas, draw, 0);
 
-    window.requestAnimationFrame(anim);
+    draw();
 }
 
-function mat4Transpose(a, transposed) {
-    var t = 0;
-    for (var i = 0; i < 4; ++i) {
-        for (var j = 0; j < 4; ++j) {
-            transposed[t++] = a[j * 4 + i];
-        }
+function LoadTexture() {
+    let texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    const image = new Image();
+    image.crossOrigin = 'anonymus';
+
+    image.src = "https://raw.githubusercontent.com/RewindRewind/WebGL/CGW/texture.jpg";
+    image.onload = () => {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            image
+        );
+        draw()
     }
 }
-
-function mat4Invert(m, inverse) {
-    var inv = new Float32Array(16);
-    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] +
-        m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
-    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] -
-        m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
-    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] +
-        m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
-    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] -
-        m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
-    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] -
-        m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
-    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] +
-        m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
-    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] -
-        m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
-    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] +
-        m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
-    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] +
-        m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
-    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] -
-        m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
-    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] +
-        m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
-    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] -
-        m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
-    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] -
-        m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
-    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] +
-        m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
-    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] -
-        m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
-    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] +
-        m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
-
-    var det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-    if (det == 0) return false;
-    det = 1.0 / det;
-    for (var i = 0; i < 16; i++) inverse[i] = inv[i] * det;
-    return true;
+window.onkeydown = (e) => {
+    switch (e.keyCode) {
+        case 87:
+            texturePoint.x -= 0.02;
+            break;
+        case 83:
+            texturePoint.x += 0.02;
+            break;
+        case 65:
+            texturePoint.y += 0.02;
+            break;
+        case 68:
+            texturePoint.y -= 0.02;
+            break;
+    }
+    texturePoint.x = Math.max(0.001, Math.min(texturePoint.x, 0.999))
+    texturePoint.y = Math.max(0.001, Math.min(texturePoint.y, 0.999))
+    draw();
 }
+
+onmousemove = (e) => {
+    scalingKoef = map(e.clientX, 0, window.outerWidth, 0, Math.PI)
+    draw()
+};
